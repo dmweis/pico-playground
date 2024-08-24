@@ -1,0 +1,19 @@
+[package]
+name = "pico-playground"
+version = "0.1.0"
+edition = "2021"
+
+# Avoid "E0463: can't find crate for `test` can't find crate"
+[[bin]]
+name = "pico-playground"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.3"
+embedded-hal = "1.0.0"
+panic-halt = "0.2.0"
+rp-pico = "0.9.0"
