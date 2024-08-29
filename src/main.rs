@@ -1,26 +1,40 @@
 #![no_std]
 #![no_main]
 
-use heapless::String;
-// The macro for our start-up function
-use embedded_hal::pwm::SetDutyCycle;
+use embedded_hal::{digital::OutputPin, pwm::SetDutyCycle};
 use postcard::accumulator::{CobsAccumulator, FeedResult};
-use rp_pico::entry;
+use rp2040_hal::Timer;
+use rp_pico::{
+    entry,
+    hal::{self, pac},
+};
+use serde::{Deserialize, Serialize};
+use usb_device::{class_prelude::*, prelude::*};
+use usbd_serial::{embedded_io::Write, SerialPort};
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
 use panic_reset as _;
 
-use rp_pico::hal;
-use rp_pico::hal::pac;
-use serde::{Deserialize, Serialize};
-use usb_device::{class_prelude::*, prelude::*};
-use usbd_serial::{embedded_io::Write, SerialPort};
-
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 struct MotorCommand {
     a: i8,
     b: i8,
+    c: i8,
+    d: i8,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct LedCommand {
+    status: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
+enum Command {
+    ResetToUsbBoot,
+    MotorCommand(MotorCommand),
+    LedCommand(LedCommand),
 }
 
 #[entry]
@@ -42,6 +56,8 @@ fn main() -> ! {
     )
     .ok()
     .unwrap();
+
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     // The single-cycle I/O block controls our GPIO pins
     let sio = hal::Sio::new(pac.SIO);
@@ -77,7 +93,7 @@ fn main() -> ! {
         .build();
 
     // blinding led
-    let _led_pin = pins.led.into_push_pull_output();
+    let mut led_pin = pins.led.into_push_pull_output();
 
     // pwm 0
     // Init PWMs
@@ -109,10 +125,48 @@ fn main() -> ! {
 
     let mut motor_b = Motor::new(gpio2, gpio3);
 
+    let pwm6 = &mut pwm_slices.pwm6;
+    pwm6.set_ph_correct();
+    pwm6.set_div_int(20u8); // 50 hz
+    pwm6.enable();
+
+    let gpio12 = &mut pwm6.channel_a;
+    gpio12.output_to(pins.gpio12);
+
+    let gpio13 = &mut pwm6.channel_b;
+    gpio13.output_to(pins.gpio13);
+
+    let mut motor_c = Motor::new(gpio12, gpio13);
+
+    let pwm7 = &mut pwm_slices.pwm7;
+    pwm7.set_ph_correct();
+    pwm7.set_div_int(20u8); // 50 hz
+    pwm7.enable();
+
+    let gpio14 = &mut pwm7.channel_a;
+    gpio14.output_to(pins.gpio14);
+
+    let gpio15 = &mut pwm7.channel_b;
+    gpio15.output_to(pins.gpio15);
+
+    let mut motor_d = Motor::new(gpio14, gpio15);
+
     let mut raw_buf = [0u8; 64];
     let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
 
+    let mut last_command = timer.get_counter();
+    // Timeout in microseconds (1 second -> 200 millis)
+    let timeout = 1_000_000 / 5;
+
     loop {
+        // check timeout
+        let now = timer.get_counter();
+        if now.ticks() - last_command.ticks() > timeout {
+            motor_a.drive(0);
+            motor_b.drive(0);
+            motor_c.drive(0);
+            motor_d.drive(0);
+        }
         // Check for new data
         if usb_dev.poll(&mut [&mut serial]) {
             match serial.read(&mut raw_buf) {
@@ -124,49 +178,44 @@ fn main() -> ! {
                 }
                 Ok(count) => {
                     let buf = &raw_buf[..count];
-                    let mut window = &buf[..];
+                    let mut window = buf;
 
                     'cobs: while !window.is_empty() {
-                        window = match cobs_buf.feed::<MotorCommand>(&window) {
+                        window = match cobs_buf.feed::<Command>(window) {
                             FeedResult::Consumed => break 'cobs,
                             FeedResult::OverFull(new_wind) => new_wind,
                             FeedResult::DeserError(new_wind) => new_wind,
                             FeedResult::Success { data, remaining } => {
-                                // Do something with `data: MyData` here.
+                                match data {
+                                    Command::ResetToUsbBoot => {
+                                        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                                    }
+                                    Command::MotorCommand(motor_command) => {
+                                        motor_a.drive(motor_command.a);
+                                        motor_b.drive(motor_command.b);
+                                        motor_c.drive(motor_command.c);
+                                        motor_d.drive(motor_command.d);
 
-                                // dbg!(data);
+                                        last_command = timer.get_counter();
 
-                                _ = writeln!(&mut serial, "Value is {:?}", data);
-
+                                        _ = writeln!(
+                                            &mut serial,
+                                            "Motor command: {:?}",
+                                            motor_command
+                                        );
+                                    }
+                                    Command::LedCommand(led_command) => {
+                                        if led_command.status {
+                                            led_pin.set_high().unwrap();
+                                        } else {
+                                            led_pin.set_low().unwrap();
+                                        }
+                                    }
+                                }
                                 remaining
                             }
                         };
                     }
-
-                    // let new_slice = &buf[..count];
-                    // if text
-                    //     .push_str(core::str::from_utf8(new_slice).unwrap_or_default())
-                    //     .is_err()
-                    // {
-                    //     text.clear()
-                    // }
-
-                    // if let Some((start, end)) =
-                    //     text.clone().rsplit_once(|c| char::is_ascii_whitespace(&c))
-                    // {
-                    //     for segment in start.split_ascii_whitespace() {
-                    //         if let Ok(value) = segment.parse::<i8>() {
-                    //             _ = writeln!(&mut serial, "Value is {}", value);
-                    //             motor_a.drive(value);
-                    //             motor_b.drive(value);
-                    //         } else if segment.eq_ignore_ascii_case("reset") {
-                    //             rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-                    //         }
-                    //     }
-
-                    //     text.clear();
-                    //     _ = text.push_str(end);
-                    // }
                 }
             }
         }
