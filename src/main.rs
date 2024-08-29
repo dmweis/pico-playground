@@ -4,6 +4,7 @@
 use heapless::String;
 // The macro for our start-up function
 use embedded_hal::pwm::SetDutyCycle;
+use postcard::accumulator::{CobsAccumulator, FeedResult};
 use rp_pico::entry;
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
@@ -12,8 +13,15 @@ use panic_reset as _;
 
 use rp_pico::hal;
 use rp_pico::hal::pac;
+use serde::{Deserialize, Serialize};
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::{embedded_io::Write, SerialPort};
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct MotorCommand {
+    a: i8,
+    b: i8,
+}
 
 #[entry]
 fn main() -> ! {
@@ -101,14 +109,13 @@ fn main() -> ! {
 
     let mut motor_b = Motor::new(gpio2, gpio3);
 
-    let mut buf = [0u8; 64];
-
-    let mut text: String<256> = String::new();
+    let mut raw_buf = [0u8; 64];
+    let mut cobs_buf: CobsAccumulator<256> = CobsAccumulator::new();
 
     loop {
         // Check for new data
         if usb_dev.poll(&mut [&mut serial]) {
-            match serial.read(&mut buf) {
+            match serial.read(&mut raw_buf) {
                 Err(_e) => {
                     // Do nothing
                 }
@@ -116,30 +123,50 @@ fn main() -> ! {
                     // Do nothing
                 }
                 Ok(count) => {
-                    let new_slice = &buf[..count];
-                    if text
-                        .push_str(core::str::from_utf8(new_slice).unwrap_or_default())
-                        .is_err()
-                    {
-                        text.clear()
-                    }
+                    let buf = &raw_buf[..count];
+                    let mut window = &buf[..];
 
-                    if let Some((start, end)) =
-                        text.clone().rsplit_once(|c| char::is_ascii_whitespace(&c))
-                    {
-                        for segment in start.split_ascii_whitespace() {
-                            if let Ok(value) = segment.parse::<i8>() {
-                                _ = writeln!(&mut serial, "Value is {}", value);
-                                motor_a.drive(value);
-                                motor_b.drive(value);
-                            } else if segment.eq_ignore_ascii_case("reset") {
-                                rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                    'cobs: while !window.is_empty() {
+                        window = match cobs_buf.feed::<MotorCommand>(&window) {
+                            FeedResult::Consumed => break 'cobs,
+                            FeedResult::OverFull(new_wind) => new_wind,
+                            FeedResult::DeserError(new_wind) => new_wind,
+                            FeedResult::Success { data, remaining } => {
+                                // Do something with `data: MyData` here.
+
+                                // dbg!(data);
+
+                                _ = writeln!(&mut serial, "Value is {:?}", data);
+
+                                remaining
                             }
-                        }
-
-                        text.clear();
-                        _ = text.push_str(end);
+                        };
                     }
+
+                    // let new_slice = &buf[..count];
+                    // if text
+                    //     .push_str(core::str::from_utf8(new_slice).unwrap_or_default())
+                    //     .is_err()
+                    // {
+                    //     text.clear()
+                    // }
+
+                    // if let Some((start, end)) =
+                    //     text.clone().rsplit_once(|c| char::is_ascii_whitespace(&c))
+                    // {
+                    //     for segment in start.split_ascii_whitespace() {
+                    //         if let Ok(value) = segment.parse::<i8>() {
+                    //             _ = writeln!(&mut serial, "Value is {}", value);
+                    //             motor_a.drive(value);
+                    //             motor_b.drive(value);
+                    //         } else if segment.eq_ignore_ascii_case("reset") {
+                    //             rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                    //         }
+                    //     }
+
+                    //     text.clear();
+                    //     _ = text.push_str(end);
+                    // }
                 }
             }
         }
