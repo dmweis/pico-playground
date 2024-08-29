@@ -63,7 +63,7 @@ fn main() -> ! {
         .strings(&[StringDescriptors::default()
             .manufacturer("Fake company")
             .product("Serial port")
-            .serial_number("TEST")])
+            .serial_number("picoplayground")])
         .unwrap()
         .device_class(2) // from: https://www.usb.org/defined-class-codes
         .build();

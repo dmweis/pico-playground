@@ -2,6 +2,12 @@
 name = "pico-playground"
 version = "0.1.0"
 edition = "2021"
+authors = ["David Michael Weis <dweis7@gmail.com>"]
+description = "Playground for the RP2040 pico"
+license = "MIT OR APACHE"
+publish = false
+readme = "README.md"
+repository = "https://github.com/dmweis/pico-playground"
 
 # Avoid "E0463: can't find crate for `test` can't find crate"
 [[bin]]
