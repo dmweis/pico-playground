@@ -37,6 +37,9 @@ enum Command {
     LedCommand(LedCommand),
 }
 
+/// This should be 10 KHz
+/// That should be in spec for the motor controller
+/// <https://www.cytron.io/p-3amp-4v-16v-dc-motor-driver-2-channels>
 const PWM_DIV_INT: u8 = 1;
 const PWM_DIV_FRAC: u8 = 16;
 const PWM_TOP: u16 = 6250;
