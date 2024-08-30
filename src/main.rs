@@ -37,6 +37,10 @@ enum Command {
     LedCommand(LedCommand),
 }
 
+const PWM_DIV_INT: u8 = 1;
+const PWM_DIV_FRAC: u8 = 16;
+const PWM_TOP: u16 = 6250;
+
 #[entry]
 fn main() -> ! {
     let mut pac = pac::Peripherals::take().unwrap();
@@ -101,7 +105,9 @@ fn main() -> ! {
 
     let pwm0 = &mut pwm_slices.pwm0;
     pwm0.set_ph_correct();
-    pwm0.set_div_int(20u8); // 50 hz
+    pwm0.set_div_int(PWM_DIV_INT);
+    pwm0.set_div_frac(PWM_DIV_FRAC);
+    pwm0.set_top(PWM_TOP);
     pwm0.enable();
 
     let gpio0 = &mut pwm0.channel_a;
@@ -114,7 +120,9 @@ fn main() -> ! {
 
     let pwm1 = &mut pwm_slices.pwm1;
     pwm1.set_ph_correct();
-    pwm1.set_div_int(20u8); // 50 hz
+    pwm1.set_div_int(PWM_DIV_INT);
+    pwm1.set_div_frac(PWM_DIV_FRAC);
+    pwm1.set_top(PWM_TOP);
     pwm1.enable();
 
     let gpio2 = &mut pwm1.channel_a;
@@ -127,7 +135,9 @@ fn main() -> ! {
 
     let pwm6 = &mut pwm_slices.pwm6;
     pwm6.set_ph_correct();
-    pwm6.set_div_int(20u8); // 50 hz
+    pwm6.set_div_int(PWM_DIV_INT);
+    pwm6.set_div_frac(PWM_DIV_FRAC);
+    pwm6.set_top(PWM_TOP);
     pwm6.enable();
 
     let gpio12 = &mut pwm6.channel_a;
@@ -140,7 +150,9 @@ fn main() -> ! {
 
     let pwm7 = &mut pwm_slices.pwm7;
     pwm7.set_ph_correct();
-    pwm7.set_div_int(20u8); // 50 hz
+    pwm7.set_div_int(PWM_DIV_INT);
+    pwm7.set_div_frac(PWM_DIV_FRAC);
+    pwm7.set_top(PWM_TOP);
     pwm7.enable();
 
     let gpio14 = &mut pwm7.channel_a;
